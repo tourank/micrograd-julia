@@ -1,1 +1,1 @@
-# micgorad-julia
+# micrograd-julia
