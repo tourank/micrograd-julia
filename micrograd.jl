@@ -5,50 +5,80 @@ import Base: +, *, tanh
 mutable struct Value
     data::Float64
     grad::Float64
+    _backward::Function
     _prev::Set{Value}
     _op::String
     label::String
 end
 
-Value(x::Float64; grad=0.0, children=Set{Value}(), op="", label="") =
-    Value(x, grad, children, op, label)
+
+Value(x::Float64;
+      grad=0.0, 
+      children=Set{Value}(), 
+      op="",
+      label="") = Value(x, grad, () -> nothing, children, op, label)
 
 import Base: +, *
 
-+(a::Value, b::Value) = Value(
-    a.data + b.data;
-    children=Set([a, b]),
-    op="+"
-)
++(a::Value, b::Value) = begin 
+    out = Value(
+        a.data + b.data;
+        children=Set([a, b]),
+        op="+"
+    )
+    out._backward = function ()
+        a.grad += 1.0 * out.grad
+        b.grad += 1.0 * out.grad
+    end
+    return out
+end
 
-*(a::Value, b::Value) = Value(
-    a.data * b.data;
-    children=Set([a, b]),
-    op="*"
-)
+*(a::Value, b::Value) = begin 
+  out = Value(
+      a.data * b.data;
+      children=Set([a, b]),
+      op="*"
+  )
+  out._backward = function ()
+    a.grad += b.data * out.grad
+    b.grad += a.data * out.grad
+  end
+  return out
+end
 
 import Base: tanh
 
-tanh(a::Value) = Value(
-    (exp(2a.data) - 1) / (exp(2a.data) + 1);
+tanh(a::Value) = begin 
+    x = a.data
+    t = (exp(2a.data) - 1) / (exp(2a.data) + 1)
+    out = Value(
+    t,
     children=Set([a]),
     op="tanh"
-)
+    )
+    out._backward = function ()
+        a.grad += (1 - t^2) * out.grad
+    end
+    return out
+end
 
+# inputs x1, x2
+x1 = Value(2.0; label="x1")
+x2 = Value(0.0; label="x2")
 
-a = Value(2.0, label="a")
-b = Value(-3.0, label="b")
-c = Value(10.0, label="c")
-e = a*b; e.label = "e"
-d = e + c; d.label = "d"
-f = Value(-2.0, label="f")
-L = d*f; L.label="L"
+# weights w1, w2
+w1 = Value(-3.0; label="w1")
+w2 = Value(1.0; label="w2")
 
+# bias
+b = Value(6.8813735870195432; label="b")
 
-
-
-
-
+# forward pass
+x1w1   = x1 * w1;              x1w1.label   = "x1*w1"
+x2w2   = x2 * w2;              x2w2.label   = "x2*w2"
+x1w1x2w2 = x1w1 + x2w2;        x1w1x2w2.label = "x1*w1 + x2*w2"
+n      = x1w1x2w2 + b;         n.label      = "n"
+o      = tanh(n);              o.label      = "o"
 
 function build!(v, nodes::Set, edges::Set)
     if !(v in nodes)
